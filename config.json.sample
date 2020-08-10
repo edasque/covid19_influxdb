@@ -4,5 +4,4 @@
     "influxdbdatabase":"influxdb_database",
     "influxdbusername":"influxdb_user",
     "influxdbpassword":"influxdb_database"
-
 }
