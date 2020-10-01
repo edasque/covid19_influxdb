@@ -20,36 +20,36 @@ import (
 // var aur aurora.Aurora
 
 type covidtrackingV1 []struct {
-	Date                     int       `json:"date"`
-	State                    string    `json:"state"`
-	Positive                 int       `json:"positive"`
-	Negative                 int       `json:"negative"`
-	Pending                  int       `json:"pending"`
-	HospitalizedCurrently    int       `json:"hospitalizedCurrently"`
-	HospitalizedCumulative   int       `json:"hospitalizedCumulative"`
-	InIcuCurrently           int       `json:"inIcuCurrently"`
-	InIcuCumulative          int       `json:"inIcuCumulative"`
-	OnVentilatorCurrently    int       `json:"onVentilatorCurrently"`
-	OnVentilatorCumulative   int       `json:"onVentilatorCumulative"`
-	Recovered                int       `json:"recovered"`
-	Hash                     string    `json:"hash"`
-	DateChecked              time.Time `json:"dateChecked"`
-	Death                    int       `json:"death"`
-	Hospitalized             int       `json:"hospitalized"`
-	Total                    int       `json:"total"`
-	TotalTestResults         int       `json:"totalTestResults"`
-	PosNeg                   int       `json:"posNeg"`
-	Fips                     string    `json:"fips"`
-	DeathIncrease            int       `json:"deathIncrease"`
-	HospitalizedIncrease     int       `json:"hospitalizedIncrease"`
-	NegativeIncrease         int       `json:"negativeIncrease"`
-	PositiveIncrease         int       `json:"positiveIncrease"`
-	TotalTestResultsIncrease int       `json:"totalTestResultsIncrease"`
+	Date                     int    `json:"date"`
+	State                    string `json:"state"`
+	Positive                 int    `json:"positive"`
+	Negative                 int    `json:"negative"`
+	Pending                  int    `json:"pending"`
+	HospitalizedCurrently    int    `json:"hospitalizedCurrently"`
+	HospitalizedCumulative   int    `json:"hospitalizedCumulative"`
+	InIcuCurrently           int    `json:"inIcuCurrently"`
+	InIcuCumulative          int    `json:"inIcuCumulative"`
+	OnVentilatorCurrently    int    `json:"onVentilatorCurrently"`
+	OnVentilatorCumulative   int    `json:"onVentilatorCumulative"`
+	Recovered                int    `json:"recovered"`
+	Hash                     string `json:"hash"`
+	DateChecked              string `json:"dateChecked"`
+	Death                    int    `json:"death"`
+	Hospitalized             int    `json:"hospitalized"`
+	Total                    int    `json:"total"`
+	TotalTestResults         int    `json:"totalTestResults"`
+	PosNeg                   int    `json:"posNeg"`
+	Fips                     string `json:"fips"`
+	DeathIncrease            int    `json:"deathIncrease"`
+	HospitalizedIncrease     int    `json:"hospitalizedIncrease"`
+	NegativeIncrease         int    `json:"negativeIncrease"`
+	PositiveIncrease         int    `json:"positiveIncrease"`
+	TotalTestResultsIncrease int    `json:"totalTestResultsIncrease"`
 }
 
 // Constants for mapping into a BV like response
 // const acceptAll = "accept_all"
-const statesAPIURL = "https://covidtracking.com/api/v1/states/daily.json"
+const statesAPIURL = "https://api.covidtracking.com/v1/states/daily.json"
 
 // Config : structure for config file. Have a file called config.json in the current directory, see config.json.sample for a referenvce
 type Config struct {
@@ -255,17 +255,25 @@ func main() {
 	}
 
 	config = Config{}
-	json.Unmarshal(file, &config)
+	configUnMarshalError := json.Unmarshal(file, &config)
+
+	if configUnMarshalError != nil {
+		fmt.Printf("File config error: %v\n", configUnMarshalError)
+		os.Exit(1)
+
+	}
 
 	covidStateResponse, err := makeAPICall()
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+
+	}
 
 	numberOfRecords := len(*covidStateResponse)
 
 	fmt.Printf("Number of records retrieved: %v\n", numberOfRecords)
-
-	if err != nil {
-		fmt.Println(err)
-	}
 
 	ingestResponse(*covidStateResponse)
 
