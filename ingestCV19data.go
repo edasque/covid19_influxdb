@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -47,9 +48,11 @@ type covidtrackingV1 []struct {
 	TotalTestResultsIncrease int    `json:"totalTestResultsIncrease"`
 }
 
-// Constants for mapping into a BV like response
-// const acceptAll = "accept_all"
+// main COVID data in JSON format for all states
 const statesAPIURL = "https://api.covidtracking.com/v1/states/daily.json"
+
+//RtCSVURL: CSV file for Rt
+const rtCSVURL = "https://d14wlfuexuxgcm.cloudfront.net/covid/rt.csv"
 
 // Config : structure for config file. Have a file called config.json in the current directory, see config.json.sample for a referenvce
 type Config struct {
@@ -60,7 +63,119 @@ type Config struct {
 	Influxdbpassword string `json:"influxdbpassword"`
 }
 
+type covidtrackingRt struct {
+	date                    time.Time
+	region                  string
+	index                   string
+	mean                    float64
+	median                  string
+	lower80                 string
+	upper80                 string
+	infections              string
+	testAdjustedPositive    string
+	testAdjustedPositiveRaw string
+	positive                string
+	tests                   string
+	newTests                string
+	newCases                string
+	newDeaths               string
+}
+
 var config Config
+
+func makeRtAPICall() ([][]string, error) {
+	req, newRequestError := http.NewRequest("GET", rtCSVURL, nil)
+
+	if newRequestError != nil {
+		fmt.Fprintf(os.Stderr, "Error getting request: %v\n", newRequestError)
+		fmt.Fprint(os.Stderr, "URL:", rtCSVURL)
+		//TODO do something if returning nil
+		// return nil // , err
+
+		return nil, newRequestError
+	}
+
+	// start := time.Now()
+	res, httperror := http.DefaultClient.Do(req)
+	// duration := time.Since(start)
+
+	if httperror != nil {
+		fmt.Fprintf(os.Stderr, "HTTP error: %v for url: %v\n", httperror, statesAPIURL)
+
+		//TODO do something if returning nil
+		// return nil // , err
+
+		return nil, httperror
+
+	}
+
+	defer res.Body.Close()
+
+	influxDBcnx, influxdbcnxerror := connectToInfluxDB()
+	defer influxDBcnx.Close()
+
+	if influxdbcnxerror != nil {
+		fmt.Println("Couldn't connect to InfluxDB:")
+		log.Fatalln(influxdbcnxerror)
+
+	}
+
+	// body, _ := ioutil.ReadAll(res.Body)
+	// r := bytes.NewReader(byteData)
+
+	lines, err := csv.NewReader(res.Body).ReadAll()
+	if err != nil {
+		return [][]string{}, err
+	}
+	layout := "2006-01-02"
+
+	numberOfRecords := len(lines)
+
+	for index, line := range lines {
+		if index != 0 {
+
+			t, err := time.Parse(layout, line[0])
+			now := time.Now().Format("1/2/2006 15:04:05 -0700")
+
+			doNotInsertBefore := time.Now().Add(time.Hour * 24 * -7)
+
+			if t.Before(doNotInsertBefore) {
+
+				fmt.Printf("%v - Will not insert %v/%v - Data for %v (%v): RtMean=%v\n", now, index+1, numberOfRecords, line[1], t, line[3])
+
+			} else {
+
+				mean, floaterr := strconv.ParseFloat(line[3], 64)
+				if err == nil && floaterr == nil {
+
+					data := covidtrackingRt{
+						date:   t,
+						region: line[1],
+						mean:   mean,
+					}
+
+					tags := map[string]string{
+						"state": data.region}
+
+					fields := map[string]interface{}{
+						"RtMean": mean,
+					}
+
+					// Add a parameter for running without inserting
+					if true {
+						writeToInfluxDB(influxDBcnx, "covid19Rt", tags, fields, t)
+						fmt.Printf("%v - Inserted %v/%v - Data for %v (%v): RtMean=%v\n", now, index+1, numberOfRecords, data.region, data.date, strconv.FormatFloat(data.mean, 'f', -1, 64))
+
+					}
+
+				}
+			}
+
+		}
+	}
+
+	return lines, nil
+}
 
 func makeAPICall() (*covidtrackingV1, error) {
 	req, newRequestError := http.NewRequest("GET", statesAPIURL, nil)
@@ -120,7 +235,7 @@ func connectToInfluxDB() (client.Client, error) {
 	return c, err
 }
 
-func writeToInfluxDB(c client.Client, tags map[string]string,
+func writeToInfluxDB(c client.Client, metricName string, tags map[string]string,
 	fields map[string]interface{}, t time.Time) {
 
 	bp, nBPError := client.NewBatchPoints(client.BatchPointsConfig{
@@ -134,7 +249,7 @@ func writeToInfluxDB(c client.Client, tags map[string]string,
 
 	// 	fmt.Println(bp)
 
-	p, newPointError := client.NewPoint("covid19", tags, fields, t)
+	p, newPointError := client.NewPoint(metricName, tags, fields, t)
 
 	if newPointError != nil {
 		fmt.Println("Error creating Batchpoints with config: ", newPointError)
@@ -237,7 +352,7 @@ func ingestResponse(response covidtrackingV1) {
 
 			// Add a parameter for running without inserting
 			if true {
-				writeToInfluxDB(influxDBcnx, tags, fields, t)
+				writeToInfluxDB(influxDBcnx, "covid19", tags, fields, t)
 			}
 			fmt.Printf("%v - Inserted %v/%v - Data for %v - %v (D:%v,C:%v,D+:%v\n", now, index+1, numberOfRecords, tformatted, element.State, element.Death, element.Positive, element.DeathIncrease)
 		}
@@ -275,6 +390,8 @@ func main() {
 
 	fmt.Printf("Number of records retrieved: %v\n", numberOfRecords)
 
-	ingestResponse(*covidStateResponse)
+	// ingestResponse(*covidStateResponse)
+	makeRtAPICall()
+	// fmt.Printf("turlupin: %v\n", turlupin)
 
 }
