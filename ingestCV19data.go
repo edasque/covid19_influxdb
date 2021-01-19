@@ -1,3 +1,5 @@
+// COVID data ingestion into influxDB
+
 package main
 
 import (
@@ -54,6 +56,8 @@ const statesAPIURL = "https://api.covidtracking.com/v1/states/daily.json"
 //RtCSVURL: CSV file for Rt
 const rtCSVURL = "https://d14wlfuexuxgcm.cloudfront.net/covid/rt.csv"
 
+const insertHowManyDaysBack = 7
+
 // Config : structure for config file. Have a file called config.json in the current directory, see config.json.sample for a referenvce
 type Config struct {
 	Influxdbhost     string `json:"influxdbhost"`
@@ -64,21 +68,21 @@ type Config struct {
 }
 
 type covidtrackingRt struct {
-	date                    time.Time
-	region                  string
-	index                   string
-	mean                    float64
-	median                  string
-	lower80                 string
-	upper80                 string
-	infections              string
-	testAdjustedPositive    string
-	testAdjustedPositiveRaw string
-	positive                string
-	tests                   string
-	newTests                string
-	newCases                string
-	newDeaths               string
+	date   time.Time
+	region string
+	// index                   string
+	mean float64
+	// median                  string
+	// lower80                 string
+	// upper80                 string
+	// infections              string
+	// testAdjustedPositive    string
+	// testAdjustedPositiveRaw string
+	// positive                string
+	// tests                   string
+	// newTests                string
+	// newCases                string
+	// newDeaths               string
 }
 
 var config Config
@@ -112,13 +116,13 @@ func makeRtAPICall() ([][]string, error) {
 	defer res.Body.Close()
 
 	influxDBcnx, influxdbcnxerror := connectToInfluxDB()
-	defer influxDBcnx.Close()
 
 	if influxdbcnxerror != nil {
 		fmt.Println("Couldn't connect to InfluxDB:")
 		log.Fatalln(influxdbcnxerror)
 
 	}
+	defer influxDBcnx.Close()
 
 	// body, _ := ioutil.ReadAll(res.Body)
 	// r := bytes.NewReader(byteData)
@@ -137,7 +141,7 @@ func makeRtAPICall() ([][]string, error) {
 			t, err := time.Parse(layout, line[0])
 			now := time.Now().Format("1/2/2006 15:04:05 -0700")
 
-			doNotInsertBefore := time.Now().Add(time.Hour * 24 * -7)
+			doNotInsertBefore := time.Now().Add(time.Hour * 24 * -insertHowManyDaysBack)
 
 			if t.Before(doNotInsertBefore) {
 
@@ -271,13 +275,14 @@ func writeToInfluxDB(c client.Client, metricName string, tags map[string]string,
 func ingestResponse(response covidtrackingV1) {
 
 	influxDBcnx, influxdbcnxerror := connectToInfluxDB()
-	defer influxDBcnx.Close()
 
 	if influxdbcnxerror != nil {
 		fmt.Println("Couldn't connect to InfluxDB:")
 		log.Fatalln(influxdbcnxerror)
 
 	}
+
+	defer influxDBcnx.Close()
 
 	// _, err = connect.Exec(`
 	// 	CREATE TABLE IF NOT EXISTS covid.DailyStatsByState (
@@ -309,7 +314,7 @@ func ingestResponse(response covidtrackingV1) {
 		tformatted := t.Format("1/2/2006 15:04:05 -0700")
 
 		//make this a parameter, now set to 7d
-		doNotInsertBefore := time.Now().Add(time.Hour * 24 * -7)
+		doNotInsertBefore := time.Now().Add(time.Hour * 24 * -insertHowManyDaysBack)
 
 		if t.Before(doNotInsertBefore) {
 
@@ -390,8 +395,14 @@ func main() {
 
 	fmt.Printf("Number of records retrieved: %v\n", numberOfRecords)
 
-	// ingestResponse(*covidStateResponse)
-	makeRtAPICall()
-	// fmt.Printf("turlupin: %v\n", turlupin)
+	ingestResponse(*covidStateResponse)
+	linesProcessed, rtError := makeRtAPICall()
+
+	if rtError == nil {
+		fmt.Printf("Number of RT records retrieved & inserted: %v\n", linesProcessed)
+	} else {
+		fmt.Printf("Error processing RT info: %v\n", rtError)
+
+	}
 
 }
